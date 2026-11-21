@@ -1,0 +1,80 @@
+name: PROJECT OMEGA - Phase 0 Audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: omega-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web-audit:
+    name: React and TypeScript Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Dependencies
+        run: npm install --no-package-lock
+
+      - name: TypeScript Check
+        run: npm run lint
+
+      - name: Production Build Check
+        run: npm run build
+
+      - name: Project Structure Report
+        if: always()
+        run: |
+          echo "PROJECT OMEGA AUDIT"
+          echo "-------------------"
+          echo "React source:"
+          find src -type f
+          echo "Android source:"
+          find android -type f
+          echo "Audit completed."
+
+  android-readiness:
+    name: Android Project Readiness
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Project
+        uses: actions/checkout@v4
+
+      - name: Check Android Gradle Wrapper
+        run: |
+          if [ -f android/gradlew ]; then
+            echo "Gradle wrapper found."
+          else
+            echo "Gradle wrapper missing."
+            echo "Android build cannot be verified."
+          fi
+
+      - name: Check Android Manifest
+        run: |
+          test -f android/app/src/main/AndroidManifest.xml
+          echo "Android Manifest found."
+
+      - name: Check Kotlin Sources
+        run: |
+          find android/app/src/main/java \
+            -name "*.kt" -type f
+          echo "Kotlin source inspection completed."
+          
