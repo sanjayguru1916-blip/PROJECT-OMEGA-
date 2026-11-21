@@ -3,27 +3,55 @@ name: PROJECT OMEGA - Phase 0 Audit
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: read
 
-concurrency:
-  group: omega-audit-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  web-audit:
-    name: React and TypeScript Audit
+  omega-audit:
+    name: SK MASTER AI Project Audit
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Project
+      - name: Checkout Repository
         uses: actions/checkout@v4
+
+      - name: Find and Extract Project ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t ZIPS < <(
+            find . -type f -iname "*.zip" \
+              -not -path "./.git/*"
+          )
+
+          if [ "${#ZIPS[@]}" -ne 1 ]; then
+            echo "Expected exactly one project ZIP."
+            echo "Found: ${#ZIPS[@]}"
+            exit 1
+          fi
+
+          mkdir -p "$RUNNER_TEMP/omega-source"
+          unzip -q "${ZIPS[0]}" \
+            -d "$RUNNER_TEMP/omega-source"
+
+          PACKAGE_FILE=$(find \
+            "$RUNNER_TEMP/omega-source" \
+            -type f -name package.json | head -n 1)
+
+          if [ -z "$PACKAGE_FILE" ]; then
+            echo "package.json not found."
+            exit 1
+          fi
+
+          PROJECT_ROOT=$(dirname "$PACKAGE_FILE")
+          echo "PROJECT_ROOT=$PROJECT_ROOT" \
+            >> "$GITHUB_ENV"
+
+          echo "Project extracted successfully."
+          echo "Project root: $PROJECT_ROOT"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -32,49 +60,42 @@ jobs:
 
       - name: Install Dependencies
         run: npm install --no-package-lock
+        working-directory: ${{ env.PROJECT_ROOT }}
 
       - name: TypeScript Check
         run: npm run lint
+        working-directory: ${{ env.PROJECT_ROOT }}
 
-      - name: Production Build Check
+      - name: Production Build
         run: npm run build
+        working-directory: ${{ env.PROJECT_ROOT }}
 
-      - name: Project Structure Report
-        if: always()
+      - name: Android Readiness Check
+        shell: bash
         run: |
-          echo "PROJECT OMEGA AUDIT"
-          echo "-------------------"
-          echo "React source:"
-          find src -type f
-          echo "Android source:"
-          find android -type f
-          echo "Audit completed."
+          cd "$PROJECT_ROOT"
 
-  android-readiness:
-    name: Android Project Readiness
-    runs-on: ubuntu-latest
+          echo "Checking Android project..."
 
-    steps:
-      - name: Checkout Project
-        uses: actions/checkout@v4
+          test -f android/app/src/main/AndroidManifest.xml
 
-      - name: Check Android Gradle Wrapper
-        run: |
+          find android -type f -name "*.kt" \
+            | tee "$RUNNER_TEMP/kotlin-files.txt"
+
+          echo "Kotlin files:"
+          wc -l "$RUNNER_TEMP/kotlin-files.txt"
+
           if [ -f android/gradlew ]; then
             echo "Gradle wrapper found."
           else
             echo "Gradle wrapper missing."
-            echo "Android build cannot be verified."
+            echo "Android build not verified."
           fi
 
-      - name: Check Android Manifest
+      - name: Audit Summary
+        if: always()
         run: |
-          test -f android/app/src/main/AndroidManifest.xml
-          echo "Android Manifest found."
-
-      - name: Check Kotlin Sources
-        run: |
-          find android/app/src/main/java \
-            -name "*.kt" -type f
-          echo "Kotlin source inspection completed."
+          echo "PROJECT OMEGA AUDIT"
+          echo "Source archive extraction attempted."
+          echo "See previous steps for actual results."
           
